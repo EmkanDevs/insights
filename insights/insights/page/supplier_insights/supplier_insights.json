@@ -1,0 +1,26 @@
+{
+ "content": null,
+ "creation": "2025-04-12 10:36:52.729073",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2025-08-13 09:38:57.974949",
+ "modified_by": "Administrator",
+ "module": "Insights",
+ "name": "supplier-insights",
+ "owner": "Administrator",
+ "page_name": "supplier-insights",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Accounts Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Supplier Insights"
+}
