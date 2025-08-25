@@ -116,7 +116,6 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
         document.body.removeChild(link);
     });    
     
-
     page.set_primary_action('Generate Report', function() {
         fetch_supplier_estimate(filters);
     });
@@ -138,7 +137,8 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
 
     let filters = {
         "supplier":[],
-        "has_po_only":0
+        "has_po_only":0,
+        "has_sq_only":0
     };
 
     this.page = page;
@@ -151,7 +151,7 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
         let details = $(this).data("details");
         let supplier_name = $(this).data("supplier_name");
         let items = $(this).data("items");
-        open_supplier_details(supplier_code, supplier_name, doctype_name, details, items);
+        open_purchase_details(supplier_code, supplier_name, doctype_name, details, items);
     });
     this.form = new frappe.ui.FieldGroup({
         fields: [
@@ -277,6 +277,19 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
                     filters.has_po_only = this.value ? 1 : 0;
                     filters.supplier = []
                 }
+            },
+            {
+                fieldtype: 'Column Break',
+            },
+            {
+                fieldtype: 'Check',
+                label: 'Only Suppliers with Supplier Quotation',
+                fieldname: 'has_sq_only',
+                default: 0,
+                onchange: function() {
+                    filters.has_sq_only = this.value ? 1 : 0;
+                    filters.supplier = []
+                }
             }
         ],
         body: this.page.body,
@@ -326,6 +339,7 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
                 <thead>
                     <tr>
                         <th>Supplier</th>
+                        <th>Supplier Quotation</th>
                         <th>Purchase Order</th>
                     </tr>
                 </thead>
@@ -338,6 +352,24 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
                                 <strong>Section, Materials, Services:</strong> ${row.section_materials_services || ''}<br>
                                 <strong>Address:</strong> ${row.address || 'NA'}<br>
                                 <strong>Contact:</strong> ${row.contact || 'NA'}
+                            </td>
+                            <td>
+                                ${row.supplier_quotation
+                                    ? `Total Records: ${row.supplier_quotation.total_records || 0}<br>
+                                    Total Quoted Qty: ${row.supplier_quotation.total_qty || 0} Qty<br>
+                                    <button type="button" class="btn btn-secondary details-btn" 
+                                        data-supplier="${row.supplier_code}" 
+                                        data-supplier_name="${row.supplier_name}"
+                                        data-doctype="Supplier Quotation"
+                                        data-items='${JSON.stringify(row.supplier_quotation_items)}'
+                                        data-details='${JSON.stringify({ 
+                                            total_records: row.supplier_quotation.total_records, 
+                                            total_qty: row.supplier_quotation.total_qty 
+                                        })}'>
+                                        Details
+                                    </button>`
+                                    : ``
+                                }
                             </td>
                             <td>
                                 ${row.purchase_order
@@ -380,7 +412,7 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
         $(".supplier-insights-table").html(table_html);
     }
 
-    function open_supplier_details(supplier_code, supplier_name, doctype_name, details, items) {
+    function open_purchase_details(supplier_code, supplier_name, doctype_name, details, items) {
         let items_array = [];
 
         try {
@@ -392,7 +424,7 @@ frappe.pages['suppliers-estimate'].on_page_load = function(wrapper) {
         let header_html = `
             <h5>Supplier Name - ${supplier_name}</h5>
             <h5>Supplier ID - ${supplier_code}</h5>
-            <h5>Total Purchase Order: ${details?.total_records || 0}</h5>
+            <h5>Total ${doctype_name}: ${details?.total_records || 0}</h5>
             <h5>Total Order Qty: ${details?.total_qty || 0}</h5>
             <br>
             <h4>Item Details</h4>

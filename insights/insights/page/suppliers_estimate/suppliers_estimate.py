@@ -45,10 +45,29 @@ def get_supplier_estimate(filters):
     project_dict = []
     for supplier in suppliers:
         supplier_name = supplier[1]
+        supplier_quotation = list(frappe.db.get_values("Supplier Quotation", {"supplier_name" : supplier[1], "transaction_date" : ["between", [start_date, end_date]]}, ["name", "total_qty" ]))
         purchase_orders = list(frappe.db.get_values("Purchase Order", {"supplier_name" : supplier[1], "transaction_date" : ["between", [start_date, end_date]]}, ["name", "total_qty", "schedule_date"]))
         filtered_orders = []
+        filtered_quotations_sq = []
         item_results = []
+        sq_item_results = []
         total_qty = 0
+        supplier_quotation_qty = 0
+        for j in supplier_quotation:
+            items = frappe.db.get_values("Supplier Quotation Item", {"parent": j[0]}, ["project", "item_code", "qty", "item_name"])
+            for p in items:
+                supplier_quotation_qty = supplier_quotation_qty + p[2]
+                sq_item_results.append(list(p))
+                if j not in filtered_quotations_sq:
+                    filtered_quotations_sq.append(j)
+        supplier_quotation = filtered_quotations_sq
+        if len(supplier_quotation) > 0:
+            sq_result = {
+                "total_records": len(supplier_quotation),
+                "total_qty": supplier_quotation_qty
+            }
+        else:
+            sq_result = None
         for j in purchase_orders:
             items = frappe.db.get_values("Purchase Order Item", {"parent": j[0]}, ["project", "item_code", "qty", "item_name"])
             for p in items:
@@ -93,24 +112,54 @@ def get_supplier_estimate(filters):
                 contact_string += ", ".join([i.email_id for i in doc.email_ids]) + "<br>"
             if doc.phone_nos:
                 contact_string += ", ".join([i.phone for i in doc.phone_nos])
-        if filters.get("has_po_only") == 1 and result:
+        if filters.get("has_sq_only") == 1 and filters.get("has_po_only") == 0 and len(supplier_quotation) > 0:
             results.append({
                 "supplier_code": supplier[0],
                 "supplier_name": supplier[1],
                 "contact": contact_string,
                 "address": supplier[3],
                 "section_materials_services": supplier[4],
+                "supplier_quotation":sq_result,
+                "supplier_quotation_items": frappe.as_json(sq_item_results),
                 "purchase_order": result,
                 "projects": project_result,
                 "items": frappe.as_json(item_results)
             })
-        elif filters.get("has_po_only") == 0:
+        if filters.get("has_po_only") == 1 and filters.get("has_sq_only") == 0 and result:
             results.append({
                 "supplier_code": supplier[0],
                 "supplier_name": supplier[1],
                 "contact": contact_string,
                 "address": supplier[3],
                 "section_materials_services": supplier[4],
+                "supplier_quotation":sq_result,
+                "supplier_quotation_items": frappe.as_json(sq_item_results),
+                "purchase_order": result,
+                "projects": project_result,
+                "items": frappe.as_json(item_results)
+            })
+        if filters.get("has_po_only") == 0 and filters.get("has_sq_only") == 0:
+            results.append({
+                "supplier_code": supplier[0],
+                "supplier_name": supplier[1],
+                "contact": contact_string,
+                "address": supplier[3],
+                "section_materials_services": supplier[4],
+                "supplier_quotation":sq_result,
+                "supplier_quotation_items": frappe.as_json(sq_item_results),
+                "purchase_order": result,
+                "projects": project_result,
+                "items": frappe.as_json(item_results)
+            })
+        if filters.get("has_po_only") == 1 and filters.get("has_sq_only") == 1 and len(supplier_quotation) > 0 and result:
+            results.append({
+                "supplier_code": supplier[0],
+                "supplier_name": supplier[1],
+                "contact": contact_string,
+                "address": supplier[3],
+                "section_materials_services": supplier[4],
+                "supplier_quotation":sq_result,
+                "supplier_quotation_items": frappe.as_json(sq_item_results),
                 "purchase_order": result,
                 "projects": project_result,
                 "items": frappe.as_json(item_results)
