@@ -1,6 +1,11 @@
 import frappe
 import json
 from frappe.utils import nowdate, add_days, fmt_money
+try:
+    # Prefer ERPNext helper that formats address consistently
+    from frappe.contacts.doctype.address.address import get_address_display as _get_address_display
+except Exception:  # pragma: no cover - helper may not exist in some forks
+    _get_address_display = None
 
 @frappe.whitelist()
 def get_supplier_insights(filters):
@@ -24,7 +29,18 @@ def get_supplier_insights(filters):
     supplier_filters = {"supplier_group": filters.get("supplier_group")} if filters.get("supplier_group") else {}
     if filters.get("supplier"):
         supplier_filters["name"] = ["in", filters.get("supplier")]
-    suppliers = frappe.get_all("Supplier", filters=supplier_filters, fields=["name", "supplier_name", "mobile_no", "email_id"])
+    suppliers = frappe.get_all(
+        "Supplier",
+        filters=supplier_filters,
+        fields=[
+            "name",
+            "supplier_name",
+            "mobile_no",
+            "email_id",
+            "supplier_primary_contact",
+            "primary_address",
+        ],
+    )
 
     results = []
 
@@ -86,6 +102,80 @@ def get_supplier_insights(filters):
         payment_request = format_data(payment_request)
         payment_entry = format_data(payment_entry)
 
+        # Build contact and address info
+        contact_string = ""
+        try:
+            contact_name = supplier.supplier_primary_contact
+            # fallback 1: linked via Dynamic Link to Supplier
+            if not contact_name:
+                dl_contacts = frappe.get_all(
+                    "Dynamic Link",
+                    filters={
+                        "link_doctype": "Supplier",
+                        "link_name": supplier.name,
+                        "parenttype": "Contact",
+                    },
+                    fields=["parent as name"],
+                    distinct=True,
+                )
+                if dl_contacts:
+                    contact_name = dl_contacts[0].name
+            # fallback 2: Contact where company_name equals supplier_name
+            if not contact_name and getattr(supplier, "supplier_name", None):
+                contact_name = frappe.db.get_value("Contact", {"company_name": supplier.supplier_name}, "name")
+
+            if contact_name:
+                doc = frappe.get_doc("Contact", contact_name)
+                if getattr(doc, "email_ids", None):
+                    contact_string += ", ".join([i.email_id for i in doc.email_ids]) + "<br>"
+                if getattr(doc, "phone_nos", None):
+                    contact_string += ", ".join([i.phone for i in doc.phone_nos])
+        except Exception:
+            pass
+
+        address_display = ""
+        try:
+            address_name = supplier.primary_address
+            # fallback: find Address linked to Supplier via Dynamic Link
+            if not address_name:
+                dl_addresses = frappe.get_all(
+                    "Dynamic Link",
+                    filters={
+                        "link_doctype": "Supplier",
+                        "link_name": supplier.name,
+                        "parenttype": "Address",
+                    },
+                    fields=["parent as name"],
+                    distinct=True,
+                )
+                if dl_addresses:
+                    address_name = dl_addresses[0].name
+
+            if address_name:
+                # 1) Use ERPNext helper if available (handles HTML formatting and linking)
+                if _get_address_display:
+                    try:
+                        address_display = _get_address_display(address_name) or ""
+                    except Exception:
+                        address_display = ""
+                # 2) Fallback to stored address_display
+                if not address_display:
+                    address_display = frappe.db.get_value("Address", address_name, "address_display") or ""
+                # 3) Final fallback: build string from fields
+                if not address_display:
+                    address_doc = frappe.get_doc("Address", address_name)
+                    parts = [
+                        address_doc.get("address_line1"),
+                        address_doc.get("address_line2"),
+                        address_doc.get("city"),
+                        address_doc.get("state"),
+                        address_doc.get("pincode"),
+                        address_doc.get("country"),
+                    ]
+                    address_display = ", ".join([p for p in parts if p])
+        except Exception:
+            pass
+
         # Append data only if any doctype sections have data
         if any([purchase_order, purchase_receipt, purchase_invoice, payment_request, payment_entry]):
             results.append({
@@ -93,6 +183,8 @@ def get_supplier_insights(filters):
                 "supplier_name": supplier.supplier_name,
                 "mobile_no": supplier.mobile_no,
                 "email_id": supplier.email_id,
+                "contact": contact_string,
+                "address": address_display,
                 "purchase_order": purchase_order,
                 "purchase_receipt": purchase_receipt,
                 "purchase_invoice": purchase_invoice,

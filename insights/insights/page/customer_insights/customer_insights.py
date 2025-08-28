@@ -1,6 +1,10 @@
 import frappe
 import json
 from frappe.utils import nowdate, add_days, fmt_money
+try:
+    from frappe.contacts.doctype.address.address import get_address_display as _get_address_display
+except Exception:
+    _get_address_display = None
 
 @frappe.whitelist()
 def get_customer_insights(filters):
@@ -24,7 +28,18 @@ def get_customer_insights(filters):
     customer_filters = {"customer_group": filters.get("customer_group")} if filters.get("customer_group") else {}
     if filters.get("customer"):
         customer_filters["name"] = ["in", filters.get("customer")]
-    customers = frappe.get_all("Customer", filters=customer_filters, fields=["name", "customer_name", "mobile_no", "email_id"])
+    customers = frappe.get_all(
+        "Customer",
+        filters=customer_filters,
+        fields=[
+            "name",
+            "customer_name",
+            "mobile_no",
+            "email_id",
+            "customer_primary_contact",
+            "primary_address",
+        ],
+    )
 
     results = []
 
@@ -86,6 +101,86 @@ def get_customer_insights(filters):
         payment_request = format_data(payment_request)
         payment_entry = format_data(payment_entry)
 
+        # Build contact and address info (robust fallbacks)
+        contact_string = ""
+        try:
+            contact_name = getattr(customer, "customer_primary_contact", None)
+            # fallback: Contact dynamically linked to Customer
+            if not contact_name:
+                dl_contacts = frappe.get_all(
+                    "Dynamic Link",
+                    filters={
+                        "link_doctype": "Customer",
+                        "link_name": customer.name,
+                        "parenttype": "Contact",
+                    },
+                    fields=["parent as name"],
+                    distinct=True,
+                )
+                if dl_contacts:
+                    contact_name = dl_contacts[0].name
+            # fallback: Contact.company_name equals customer_name
+            if not contact_name and getattr(customer, "customer_name", None):
+                contact_name = frappe.db.get_value("Contact", {"company_name": customer.customer_name}, "name")
+
+            if contact_name:
+                doc = frappe.get_doc("Contact", contact_name)
+                if getattr(doc, "email_ids", None):
+                    emails = [i.email_id for i in doc.email_ids if i.email_id]
+                else:
+                    emails = []
+                if getattr(doc, "phone_nos", None):
+                    phones = [i.phone for i in doc.phone_nos if i.phone]
+                else:
+                    phones = []
+                if emails:
+                    contact_string += ", ".join(emails)
+                if phones:
+                    if contact_string:
+                        contact_string += "<br>"
+                    contact_string += ", ".join(phones)
+        except Exception:
+            pass
+
+        address_display = ""
+        try:
+            address_name = getattr(customer, "primary_address", None)
+            if not address_name:
+                dl_addresses = frappe.get_all(
+                    "Dynamic Link",
+                    filters={
+                        "link_doctype": "Customer",
+                        "link_name": customer.name,
+                        "parenttype": "Address",
+                    },
+                    fields=["parent as name"],
+                    distinct=True,
+                )
+                if dl_addresses:
+                    address_name = dl_addresses[0].name
+
+            if address_name:
+                if _get_address_display:
+                    try:
+                        address_display = _get_address_display(address_name) or ""
+                    except Exception:
+                        address_display = ""
+                if not address_display:
+                    address_display = frappe.db.get_value("Address", address_name, "address_display") or ""
+                if not address_display:
+                    address_doc = frappe.get_doc("Address", address_name)
+                    parts = [
+                        address_doc.get("address_line1"),
+                        address_doc.get("address_line2"),
+                        address_doc.get("city"),
+                        address_doc.get("state"),
+                        address_doc.get("pincode"),
+                        address_doc.get("country"),
+                    ]
+                    address_display = ", ".join([p for p in parts if p])
+        except Exception:
+            pass
+
         # Append data only if any doctype sections have data
         if any([sales_order, delivery_note, sales_invoice, payment_request, payment_entry]):
             results.append({
@@ -93,6 +188,8 @@ def get_customer_insights(filters):
                 "customer_name": customer.customer_name,
                 "mobile_no": customer.mobile_no,
                 "email_id": customer.email_id,
+                "contact": contact_string,
+                "address": address_display,
                 "sales_order": sales_order,
                 "delivery_note": delivery_note,
                 "sales_invoice": sales_invoice,
