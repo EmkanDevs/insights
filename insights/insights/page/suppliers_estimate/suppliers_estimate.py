@@ -139,18 +139,19 @@ def get_supplier_estimate(filters):
                 "items": frappe.as_json(item_results)
             })
         if filters.get("has_po_only") == 0 and filters.get("has_sq_only") == 0:
-            results.append({
-                "supplier_code": supplier[0],
-                "supplier_name": supplier[1],
-                "contact": contact_string,
-                "address": supplier[3],
-                "section_materials_services": supplier[4],
-                "supplier_quotation":sq_result,
-                "supplier_quotation_items": frappe.as_json(sq_item_results),
-                "purchase_order": result,
-                "projects": project_result,
-                "items": frappe.as_json(item_results)
-            })
+            if not filters.get("project") or result:
+                results.append({
+                    "supplier_code": supplier[0],
+                    "supplier_name": supplier[1],
+                    "contact": contact_string,
+                    "address": supplier[3],
+                    "section_materials_services": supplier[4],
+                    "supplier_quotation":sq_result,
+                    "supplier_quotation_items": frappe.as_json(sq_item_results),
+                    "purchase_order": result,
+                    "projects": project_result,
+                    "items": frappe.as_json(item_results)
+                })
         if filters.get("has_po_only") == 1 and filters.get("has_sq_only") == 1 and len(supplier_quotation) > 0 and result:
             results.append({
                 "supplier_code": supplier[0],
